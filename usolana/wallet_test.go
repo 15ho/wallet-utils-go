@@ -1,7 +1,8 @@
 package usolana
 
 import (
-	"strings"
+	"errors"
+	"math/big"
 	"testing"
 
 	"github.com/gagliardetto/solana-go/rpc"
@@ -43,7 +44,7 @@ func TestWalletClient(t *testing.T) {
 	t.Run("transfer sol", func(t *testing.T) {
 		amount := LamportsPerSOL / 1000000
 		_, err := wc.GetSOLBalanceByAddress(ctx, Acc2AccountAddress)
-		if err != nil && !strings.Contains(err.Error(), "not found") {
+		if err != nil && !errors.Is(err, rpc.ErrNotFound) {
 			assert.NoError(t, err)
 		}
 		if err != nil {
@@ -63,6 +64,33 @@ func TestWalletClient(t *testing.T) {
 			t.Skip("balance is not enough")
 		}
 		sign, err := wc.TransferSOL(ctx, Acc2AccountAddress, amount) // 0.000001 SOL
+		assert.NoError(t, err)
+		t.Logf("signature: %s", sign)
+	})
+
+	t.Run("get spl token balance by address", func(t *testing.T) {
+		balance, decimals, err := wc.GetSPLTokenBalanceByAddress(ctx, USDCTokenAddress, Acc2AccountAddress)
+		assert.NoError(t, err)
+		t.Logf("account2 spl token balance: %s, decimals: %d", balance, decimals)
+	})
+
+	t.Run("get spl token balance", func(t *testing.T) {
+		balance, decimals, err := wc.GetSPLTokenBalance(ctx, USDCTokenAddress)
+		assert.NoError(t, err)
+		t.Logf("account1 spl token balance: %s, decimals: %d", balance, decimals)
+	})
+
+	t.Run("transfer spl token", func(t *testing.T) {
+		amount := uint64(1)
+		splTokenBalance, _, err := wc.GetSPLTokenBalance(ctx, USDCTokenAddress)
+		assert.NoError(t, err)
+		balance, _ := new(big.Int).SetString(splTokenBalance, 10)
+		assert.NotNil(t, balance)
+		if balance.Cmp(big.NewInt(int64(amount))) < 0 {
+			t.Skip("balance is not enough")
+		}
+
+		sign, err := wc.TransferSPLToken(ctx, USDCTokenAddress, Acc2AccountAddress, amount)
 		assert.NoError(t, err)
 		t.Logf("signature: %s", sign)
 	})
