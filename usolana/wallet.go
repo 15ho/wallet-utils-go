@@ -45,6 +45,10 @@ func NewTestnetWalletClient(privateKeyBase58 string) (*WalletClient, error) {
 	return NewWalletClient(rpc.TestNet_RPC, privateKeyBase58)
 }
 
+func NewDevnetWalletClient(privateKeyBase58 string) (*WalletClient, error) {
+	return NewWalletClient(rpc.DevNet_RPC, privateKeyBase58)
+}
+
 func (wc *WalletClient) TransferSOL(ctx context.Context, toAddress string, amount uint64) (signature string, err error) {
 	to, err := solana.PublicKeyFromBase58(toAddress)
 	if err != nil {

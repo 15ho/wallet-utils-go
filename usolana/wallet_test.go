@@ -1,8 +1,10 @@
 package usolana
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/gagliardetto/solana-go/rpc"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -22,7 +24,7 @@ func TestWalletClient(t *testing.T) {
 		t.Skip("ACC2PK58 env var is not set")
 	}
 
-	wc, err := NewTestnetWalletClient(Acc1PrivateKeyBase58)
+	wc, err := NewDevnetWalletClient(Acc1PrivateKeyBase58)
 	assert.NoError(t, err)
 	ctx := t.Context()
 
@@ -40,9 +42,24 @@ func TestWalletClient(t *testing.T) {
 
 	t.Run("transfer sol", func(t *testing.T) {
 		amount := LamportsPerSOL / 1000000
+		_, err := wc.GetSOLBalanceByAddress(ctx, Acc2AccountAddress)
+		if err != nil && !strings.Contains(err.Error(), "not found") {
+			assert.NoError(t, err)
+		}
+		if err != nil {
+			// Accounts require a rent deposit in lamports (SOL) that's proportional to the amount of data stored,
+			// and you can fully recover it when you close the account.
+			// https://solana.com/docs/core/accounts#rent
+			// transfer sol: data size is 0
+			rentAmount, err := wc.cli.GetMinimumBalanceForRentExemption(ctx, 0, rpc.CommitmentFinalized)
+			assert.NoError(t, err)
+			amount = rentAmount
+			t.Logf("rent amount: %d", rentAmount)
+		}
+
 		balance, err := wc.GetSOLBalance(ctx)
 		assert.NoError(t, err)
-		if balance < amount*10 {
+		if balance < amount+5000 {
 			t.Skip("balance is not enough")
 		}
 		sign, err := wc.TransferSOL(ctx, Acc2AccountAddress, amount) // 0.000001 SOL
