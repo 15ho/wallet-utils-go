@@ -7,7 +7,9 @@ import (
 	"fmt"
 
 	"github.com/gagliardetto/solana-go"
+	tokenacc "github.com/gagliardetto/solana-go/programs/associated-token-account"
 	"github.com/gagliardetto/solana-go/programs/system"
+	"github.com/gagliardetto/solana-go/programs/token"
 	"github.com/gagliardetto/solana-go/rpc"
 	"github.com/mr-tron/base58"
 )
@@ -117,4 +119,127 @@ func (wc *WalletClient) GetSOLBalanceByAddress(ctx context.Context, address stri
 		return
 	}
 	return wc.getSOLBalance(ctx, pubKey)
+}
+
+func (wc *WalletClient) TransferSPLToken(ctx context.Context, tokenAddress, toAddress string, amount uint64) (signature string, err error) {
+	mint, err := solana.PublicKeyFromBase58(tokenAddress)
+	if err != nil {
+		err = fmt.Errorf("parse mint: %w", err)
+		return
+	}
+	to, err := solana.PublicKeyFromBase58(toAddress)
+	if err != nil {
+		err = fmt.Errorf("parse to address: %w", err)
+		return
+	}
+	fromTokenAcc, _, err := solana.FindAssociatedTokenAddress(wc.account, mint)
+	if err != nil {
+		err = fmt.Errorf("find associated from token account: %w", err)
+		return
+	}
+	toTokenAcc, _, err := solana.FindAssociatedTokenAddress(to, mint)
+	if err != nil {
+		err = fmt.Errorf("find associated to token account: %w", err)
+		return
+	}
+
+	accRes, err := wc.cli.GetAccountInfo(ctx, toTokenAcc)
+	if err != nil && err != rpc.ErrNotFound {
+		err = fmt.Errorf("get to token account info: %w", err)
+		return
+	}
+
+	inss := make([]solana.Instruction, 0, 2)
+
+	if accRes == nil {
+		// create spl token account
+		// https://solana.com/docs/tokens#token-account
+		// https://solana.com/developers/cookbook/tokens/create-token-account
+		inss = append(inss,
+			tokenacc.NewCreateInstruction(
+				wc.account,
+				to,
+				mint,
+			).Build(),
+		)
+	}
+
+	res, err := wc.cli.GetLatestBlockhash(ctx, rpc.CommitmentFinalized)
+	if err != nil {
+		err = fmt.Errorf("get latest block hash: %w", err)
+		return
+	}
+	tx, err := solana.NewTransaction(
+		append(inss, token.NewTransferInstruction(amount,
+			fromTokenAcc,
+			toTokenAcc,
+			wc.account,
+			nil,
+		).Build()),
+		res.Value.Blockhash,
+		solana.TransactionPayer(wc.account),
+	)
+	if err != nil {
+		err = fmt.Errorf("new tx: %w", err)
+		return
+	}
+	_, err = tx.Sign(
+		func(key solana.PublicKey) *solana.PrivateKey {
+			if wc.account.Equals(key) {
+				return &wc.privateKey
+			}
+			return nil
+		},
+	)
+	if err != nil {
+		err = fmt.Errorf("tx sign: %w", err)
+		return
+	}
+
+	signObj, err := wc.cli.SendTransaction(ctx, tx)
+	if err != nil {
+		err = fmt.Errorf("send tx: %w", err)
+		return
+	}
+	signature = signObj.String()
+	return
+}
+
+func (wc *WalletClient) GetSPLTokenBalance(ctx context.Context, tokenAddress string) (balance string, decimals uint8, err error) {
+	mint, err := solana.PublicKeyFromBase58(tokenAddress)
+	if err != nil {
+		err = fmt.Errorf("parse mint: %w", err)
+		return
+	}
+	return wc.getSPLTokenBalance(ctx, mint, wc.account)
+}
+
+func (wc *WalletClient) getSPLTokenBalance(ctx context.Context, mint, walletAccount solana.PublicKey) (balance string, decimals uint8, err error) {
+	tokenAcc, _, err := solana.FindAssociatedTokenAddress(walletAccount, mint)
+	if err != nil {
+		err = fmt.Errorf("find associated token account: %w", err)
+		return
+	}
+	res, err := wc.cli.GetTokenAccountBalance(ctx, tokenAcc, rpc.CommitmentFinalized)
+	if err != nil {
+		err = fmt.Errorf("get token account balance: %w", err)
+		return
+	}
+	balance = res.Value.Amount
+	decimals = res.Value.Decimals
+	return
+}
+
+func (wc *WalletClient) GetSPLTokenBalanceByAddress(ctx context.Context, tokenAddress, walletAddress string) (balance string, decimals uint8, err error) {
+	mint, err := solana.PublicKeyFromBase58(tokenAddress)
+	if err != nil {
+		err = fmt.Errorf("parse mint: %w", err)
+		return
+	}
+	account, err := solana.PublicKeyFromBase58(walletAddress)
+	if err != nil {
+		err = fmt.Errorf("parse wallet address: %w", err)
+		return
+	}
+	return wc.getSPLTokenBalance(ctx, mint, account)
 }
