@@ -12,6 +12,12 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
+    env:
+      ACC1PK58: ${{ secrets.ACC1PK58 }}
+      ACC1ADDR: ${{ secrets.ACC1ADDR }}
+      ACC2PK58: ${{ secrets.ACC2PK58 }}
+      ACC2ADDR: ${{ secrets.ACC1ADDR }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -22,3 +28,8 @@ jobs:
 
       - name: Run tests with coverage
         run: go test -coverprofile=coverage.txt -v ./...
+
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
