@@ -8,6 +8,6 @@
 
 > 🛠️ The features are primarily built using the Chain SDK.
 
-||Chain |SDK |Description|
-|:------------:|:---------:|:--------:|:---------:|
-|<img src="https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/info/logo.png" width="32" /> |Solana |[solana-go](https://github.com/gagliardetto/solana-go) |Go SDK library and RPC client for the Solana Blockchain
+||Chain |SDK |License |Description |
+|:------------:|:---------:|:--------:|:--------:|:---------:|
+|<img src="https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/info/logo.png" width="32" /> |Solana |[solana-go](https://github.com/gagliardetto/solana-go) |Apache-2.0 |Go SDK library and RPC client for the Solana Blockchain
