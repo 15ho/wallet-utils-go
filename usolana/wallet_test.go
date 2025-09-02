@@ -42,7 +42,7 @@ func TestWalletClient(t *testing.T) {
 	})
 
 	t.Run("transfer sol", func(t *testing.T) {
-		amount := LamportsPerSOL / 1000000
+		amount := LamportsPerSOL / 1000000 // 0.000001 SOL
 		_, err := wc.GetSOLBalanceByAddress(ctx, Acc2AccountAddress)
 		if err != nil && !errors.Is(err, rpc.ErrNotFound) {
 			assert.NoError(t, err)
@@ -63,7 +63,34 @@ func TestWalletClient(t *testing.T) {
 		if balance < amount+5000 {
 			t.Skip("balance is not enough")
 		}
-		sign, err := wc.TransferSOL(ctx, Acc2AccountAddress, amount) // 0.000001 SOL
+		sign, err := wc.TransferSOL(ctx, Acc2AccountAddress, amount)
+		assert.NoError(t, err)
+		t.Logf("signature: %s", sign)
+	})
+
+	t.Run("transfer sol with priority fee", func(t *testing.T) {
+		amount := LamportsPerSOL / 1000000  // 0.000001 SOL
+		_, err := wc.GetSOLBalanceByAddress(ctx, Acc2AccountAddress)
+		if err != nil && !errors.Is(err, rpc.ErrNotFound) {
+			assert.NoError(t, err)
+		}
+		if err != nil {
+			rentAmount, err := wc.cli.GetMinimumBalanceForRentExemption(ctx, 0, rpc.CommitmentFinalized)
+			assert.NoError(t, err)
+			amount = rentAmount
+			t.Logf("rent amount: %d", rentAmount)
+		}
+
+		balance, err := wc.GetSOLBalance(ctx)
+		assert.NoError(t, err)
+		if balance < amount+5000 {
+			t.Skip("balance is not enough")
+		}
+
+		sign, err := wc.TransferSOL(ctx, Acc2AccountAddress, amount, TxPriorityFee{
+			ComputeUnitLimit: 30000,
+			ComputeUnitPrice: 1,
+		})
 		assert.NoError(t, err)
 		t.Logf("signature: %s", sign)
 	})
@@ -91,6 +118,24 @@ func TestWalletClient(t *testing.T) {
 		}
 
 		sign, err := wc.TransferSPLToken(ctx, USDCTokenAddress, Acc2AccountAddress, amount)
+		assert.NoError(t, err)
+		t.Logf("signature: %s", sign)
+	})
+
+	t.Run("transfer spl token with priority fee", func(t *testing.T) {
+		amount := uint64(1)
+		splTokenBalance, _, err := wc.GetSPLTokenBalance(ctx, USDCTokenAddress)
+		assert.NoError(t, err)
+		balance, _ := new(big.Int).SetString(splTokenBalance, 10)
+		assert.NotNil(t, balance)
+		if balance.Cmp(big.NewInt(int64(amount))) < 0 {
+			t.Skip("balance is not enough")
+		}
+
+		sign, err := wc.TransferSPLToken(ctx, USDCTokenAddress, Acc2AccountAddress, amount, TxPriorityFee{
+			ComputeUnitLimit: 10000,
+			ComputeUnitPrice: 1,
+		})
 		assert.NoError(t, err)
 		t.Logf("signature: %s", sign)
 	})
