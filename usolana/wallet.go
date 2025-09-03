@@ -8,6 +8,7 @@ import (
 
 	"github.com/gagliardetto/solana-go"
 	tokenacc "github.com/gagliardetto/solana-go/programs/associated-token-account"
+	computebudget "github.com/gagliardetto/solana-go/programs/compute-budget"
 	"github.com/gagliardetto/solana-go/programs/system"
 	"github.com/gagliardetto/solana-go/programs/token"
 	"github.com/gagliardetto/solana-go/rpc"
@@ -51,7 +52,7 @@ func NewDevnetWalletClient(privateKeyBase58 string) (*WalletClient, error) {
 	return NewWalletClient(rpc.DevNet_RPC, privateKeyBase58)
 }
 
-func (wc *WalletClient) TransferSOL(ctx context.Context, toAddress string, amount uint64) (signature string, err error) {
+func (wc *WalletClient) TransferSOL(ctx context.Context, toAddress string, amount uint64, priorityFeeOption ...TxPriorityFee) (signature string, err error) {
 	to, err := solana.PublicKeyFromBase58(toAddress)
 	if err != nil {
 		return
@@ -63,14 +64,22 @@ func (wc *WalletClient) TransferSOL(ctx context.Context, toAddress string, amoun
 		return
 	}
 
+	inss := make([]solana.Instruction, 0, 3)
+
+	if len(priorityFeeOption) > 0 {
+		priorityFee := priorityFeeOption[0]
+		inss = append(inss,
+			computebudget.NewSetComputeUnitLimitInstruction(priorityFee.ComputeUnitLimit).Build(),
+			computebudget.NewSetComputeUnitPriceInstruction(priorityFee.ComputeUnitPrice).Build(),
+		)
+	}
+
 	tx, err := solana.NewTransaction(
-		[]solana.Instruction{
-			system.NewTransferInstruction(
-				amount,
-				wc.account,
-				to,
-			).Build(),
-		},
+		append(inss, system.NewTransferInstruction(
+			amount,
+			wc.account,
+			to,
+		).Build()),
 		res.Value.Blockhash,
 		solana.TransactionPayer(wc.account),
 	)
@@ -121,7 +130,7 @@ func (wc *WalletClient) GetSOLBalanceByAddress(ctx context.Context, address stri
 	return wc.getSOLBalance(ctx, pubKey)
 }
 
-func (wc *WalletClient) TransferSPLToken(ctx context.Context, tokenAddress, toAddress string, amount uint64) (signature string, err error) {
+func (wc *WalletClient) TransferSPLToken(ctx context.Context, tokenAddress, toAddress string, amount uint64, priorityFeeOption ...TxPriorityFee) (signature string, err error) {
 	mint, err := solana.PublicKeyFromBase58(tokenAddress)
 	if err != nil {
 		err = fmt.Errorf("parse mint: %w", err)
@@ -149,7 +158,15 @@ func (wc *WalletClient) TransferSPLToken(ctx context.Context, tokenAddress, toAd
 		return
 	}
 
-	inss := make([]solana.Instruction, 0, 2)
+	inss := make([]solana.Instruction, 0, 4)
+
+	if len(priorityFeeOption) > 0 {
+		priorityFee := priorityFeeOption[0]
+		inss = append(inss,
+			computebudget.NewSetComputeUnitLimitInstruction(priorityFee.ComputeUnitLimit).Build(),
+			computebudget.NewSetComputeUnitPriceInstruction(priorityFee.ComputeUnitPrice).Build(),
+		)
+	}
 
 	if accRes == nil {
 		// create spl token account
