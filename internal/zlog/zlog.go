@@ -16,7 +16,7 @@ func init() {
 }
 
 func initLogger() {
-	lvl := zap.InfoLevel
+	lvl := zap.DebugLevel
 	if lvlStr := os.Getenv("GO_LOG"); lvlStr != "" {
 		parsedLvl, err := zapcore.ParseLevel(os.Getenv("GO_LOG"))
 		if err != nil {
