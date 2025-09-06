@@ -11,3 +11,4 @@
 ||Chain |SDK |License |Description |
 |:------------:|:---------:|:--------:|:--------:|:---------:|
 |<img src="https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/info/logo.png" width="32" /> |Solana |[solana-go](https://github.com/gagliardetto/solana-go) |Apache-2.0 |Go SDK library and RPC client for the Solana Blockchain
+|<img src="https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png" width="32" /> |Ethereum |[go-ethereum/ethclient](https://github.com/ethereum/go-ethereum) |LGPL-3.0, GPL-3.0 |Go implementation of the Ethereum protocol
