@@ -52,7 +52,7 @@ func NewDevnetWalletClient(privateKeyBase58 string) (*WalletClient, error) {
 	return NewWalletClient(rpc.DevNet_RPC, privateKeyBase58)
 }
 
-func (wc *WalletClient) TransferSOL(ctx context.Context, toAddress string, amount uint64, priorityFeeOption ...TxPriorityFee) (signature string, err error) {
+func (wc *WalletClient) buildTxTransferSOL(ctx context.Context, toAddress string, amount uint64, priorityFeeOption ...TxPriorityFee) (tx *solana.Transaction, err error) {
 	to, err := solana.PublicKeyFromBase58(toAddress)
 	if err != nil {
 		return
@@ -74,7 +74,7 @@ func (wc *WalletClient) TransferSOL(ctx context.Context, toAddress string, amoun
 		)
 	}
 
-	tx, err := solana.NewTransaction(
+	tx, err = solana.NewTransaction(
 		append(inss, system.NewTransferInstruction(
 			amount,
 			wc.account,
@@ -98,9 +98,29 @@ func (wc *WalletClient) TransferSOL(ctx context.Context, toAddress string, amoun
 	)
 	if err != nil {
 		err = fmt.Errorf("tx sign: %w", err)
+	}
+	return
+}
+
+func (wc *WalletClient) SimulateTxTransferSOL(ctx context.Context, toAddress string, amount uint64, priorityFeeOption ...TxPriorityFee) (unitsConsumed uint64, err error) {
+	tx, err := wc.buildTxTransferSOL(ctx, toAddress, amount, priorityFeeOption...)
+	if err != nil {
 		return
 	}
+	simRes, err := wc.cli.SimulateTransaction(ctx, tx)
+	if err != nil {
+		err = fmt.Errorf("simulate tx: %w", err)
+		return
+	}
+	unitsConsumed = *simRes.Value.UnitsConsumed
+	return
+}
 
+func (wc *WalletClient) TransferSOL(ctx context.Context, toAddress string, amount uint64, priorityFeeOption ...TxPriorityFee) (signature string, err error) {
+	tx, err := wc.buildTxTransferSOL(ctx, toAddress, amount, priorityFeeOption...)
+	if err != nil {
+		return
+	}
 	signObj, err := wc.cli.SendTransaction(ctx, tx)
 	if err != nil {
 		err = fmt.Errorf("send tx: %w", err)
@@ -130,7 +150,7 @@ func (wc *WalletClient) GetSOLBalanceByAddress(ctx context.Context, address stri
 	return wc.getSOLBalance(ctx, pubKey)
 }
 
-func (wc *WalletClient) TransferSPLToken(ctx context.Context, tokenAddress, toAddress string, amount uint64, priorityFeeOption ...TxPriorityFee) (signature string, err error) {
+func (wc *WalletClient) buildTxTransferSPLToken(ctx context.Context, tokenAddress, toAddress string, amount uint64, priorityFeeOption ...TxPriorityFee) (tx *solana.Transaction, err error) {
 	mint, err := solana.PublicKeyFromBase58(tokenAddress)
 	if err != nil {
 		err = fmt.Errorf("parse mint: %w", err)
@@ -186,7 +206,7 @@ func (wc *WalletClient) TransferSPLToken(ctx context.Context, tokenAddress, toAd
 		err = fmt.Errorf("get latest block hash: %w", err)
 		return
 	}
-	tx, err := solana.NewTransaction(
+	tx, err = solana.NewTransaction(
 		append(inss, token.NewTransferInstruction(amount,
 			fromTokenAcc,
 			toTokenAcc,
@@ -210,9 +230,30 @@ func (wc *WalletClient) TransferSPLToken(ctx context.Context, tokenAddress, toAd
 	)
 	if err != nil {
 		err = fmt.Errorf("tx sign: %w", err)
+	}
+	return
+}
+
+func (wc *WalletClient) SimulateTxTransferSPLToken(ctx context.Context, tokenAddress, toAddress string, amount uint64, priorityFeeOption ...TxPriorityFee) (unitsConsumed uint64, err error) {
+	tx, err := wc.buildTxTransferSPLToken(ctx, tokenAddress, toAddress, amount, priorityFeeOption...)
+	if err != nil {
 		return
 	}
 
+	simRes, err := wc.cli.SimulateTransaction(ctx, tx)
+	if err != nil {
+		err = fmt.Errorf("simulate tx: %w", err)
+		return
+	}
+	unitsConsumed = *simRes.Value.UnitsConsumed
+	return
+}
+
+func (wc *WalletClient) TransferSPLToken(ctx context.Context, tokenAddress, toAddress string, amount uint64, priorityFeeOption ...TxPriorityFee) (signature string, err error) {
+	tx, err := wc.buildTxTransferSPLToken(ctx, tokenAddress, toAddress, amount, priorityFeeOption...)
+	if err != nil {
+		return
+	}
 	signObj, err := wc.cli.SendTransaction(ctx, tx)
 	if err != nil {
 		err = fmt.Errorf("send tx: %w", err)
