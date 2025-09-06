@@ -69,7 +69,7 @@ func TestWalletClient(t *testing.T) {
 	})
 
 	t.Run("transfer sol with priority fee", func(t *testing.T) {
-		amount := LamportsPerSOL / 1000000  // 0.000001 SOL
+		amount := LamportsPerSOL / 1000000 // 0.000001 SOL
 		_, err := wc.GetSOLBalanceByAddress(ctx, Acc2AccountAddress)
 		if err != nil && !errors.Is(err, rpc.ErrNotFound) {
 			assert.NoError(t, err)
@@ -87,10 +87,16 @@ func TestWalletClient(t *testing.T) {
 			t.Skip("balance is not enough")
 		}
 
-		sign, err := wc.TransferSOL(ctx, Acc2AccountAddress, amount, TxPriorityFee{
+		txPriorityFee := TxPriorityFee{
 			ComputeUnitLimit: 30000,
 			ComputeUnitPrice: 1,
-		})
+		}
+
+		unitsConsumed, err := wc.SimulateTxTransferSOL(ctx, Acc2AccountAddress, amount, txPriorityFee)
+		assert.NoError(t, err)
+		assert.EqualValues(t, 450, unitsConsumed)
+
+		sign, err := wc.TransferSOL(ctx, Acc2AccountAddress, amount, txPriorityFee)
 		assert.NoError(t, err)
 		t.Logf("signature: %s", sign)
 	})
@@ -132,10 +138,16 @@ func TestWalletClient(t *testing.T) {
 			t.Skip("balance is not enough")
 		}
 
-		sign, err := wc.TransferSPLToken(ctx, USDCTokenAddress, Acc2AccountAddress, amount, TxPriorityFee{
+		txPriorityFee := TxPriorityFee{
 			ComputeUnitLimit: 10000,
 			ComputeUnitPrice: 1,
-		})
+		}
+
+		unitsConsumed, err := wc.SimulateTxTransferSPLToken(ctx, USDCTokenAddress, Acc2AccountAddress, amount, txPriorityFee)
+		assert.NoError(t, err)
+		assert.EqualValues(t, 4944, unitsConsumed)
+
+		sign, err := wc.TransferSPLToken(ctx, USDCTokenAddress, Acc2AccountAddress, amount, txPriorityFee)
 		assert.NoError(t, err)
 		t.Logf("signature: %s", sign)
 	})
