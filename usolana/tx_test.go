@@ -32,3 +32,5 @@ func TestParseConfirmTx(t *testing.T) {
 	assert.NoError(t, err)
 	t.Log("parsed tx json:", string(ptxJson))
 }
+
+// TODO: add more tests

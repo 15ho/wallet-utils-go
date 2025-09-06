@@ -10,9 +10,14 @@ import (
 	"github.com/15ho/wallet-utils-go/internal/zlog"
 	bin "github.com/gagliardetto/binary"
 	"github.com/gagliardetto/solana-go"
+	associatedtokenaccount "github.com/gagliardetto/solana-go/programs/associated-token-account"
 	computebudget "github.com/gagliardetto/solana-go/programs/compute-budget"
+	"github.com/gagliardetto/solana-go/programs/memo"
+	"github.com/gagliardetto/solana-go/programs/stake"
 	"github.com/gagliardetto/solana-go/programs/system"
 	"github.com/gagliardetto/solana-go/programs/token"
+	"github.com/gagliardetto/solana-go/programs/tokenregistry"
+	"github.com/gagliardetto/solana-go/programs/vote"
 	"github.com/gagliardetto/solana-go/rpc"
 	"go.uber.org/zap"
 )
@@ -49,18 +54,20 @@ type ParsedTx struct {
 	Signer               []string // signer addresses
 	Instructions         []ParsedInstruction
 	Fee                  uint64 // transaction fee // = base fee + priority fee // lamports
-	PriorityFee          uint64 // transaction priority fee // lamports
+	PriorityFee          uint64 // transaction priority fee // = (compute unit price * compute unit limit) / microLamportsPerLamport // lamports
 	ComputeUnitsConsumed uint64 // compute units consumed
 	TxVersion            int    // transaction version // -1: legacy
 }
 
 type TxParser struct {
-	cli *rpc.Client
+	cli              *rpc.Client
+	insParserFactory instructionsParserFactory
 }
 
 func NewTxParser(endpoint string) *TxParser {
 	return &TxParser{
-		cli: rpc.New(endpoint),
+		cli:              rpc.New(endpoint),
+		insParserFactory: newInstructionsParserFactory(),
 	}
 }
 
@@ -148,7 +155,7 @@ func (tp *TxParser) parseConfirmedTx(twm rpc.TransactionWithMeta) (ptx *ParsedTx
 			return
 		}
 
-		if programID == ProgramIDComputeBudget {
+		if programID == computebudget.ProgramID.String() {
 			switch uint8(parsedIns.TypeID) {
 			case computebudget.Instruction_SetComputeUnitLimit:
 				computeUnitLimit = parsedIns.Data.(*computebudget.SetComputeUnitLimit).Units
@@ -212,60 +219,10 @@ func (tp *TxParser) parseConfirmedTx(twm rpc.TransactionWithMeta) (ptx *ParsedTx
 
 func (tp *TxParser) parseInstruction(tx *solana.Transaction, ins solana.CompiledInstruction) (ParsedInstruction, error) {
 	programID := tx.Message.AccountKeys[ins.ProgramIDIndex].String()
-	switch programID {
-	case ProgramIDSystem:
-		var sysIns system.Instruction
-		err := sysIns.UnmarshalWithDecoder(bin.NewBinDecoder(ins.Data))
-		if err != nil {
-			return ParsedInstruction{}, fmt.Errorf("unmarshal system instruction: %w", err)
-		}
-		insID := sysIns.TypeID.Uint32()
-		return ParsedInstruction{
-			ProgramID: programID,
-			TypeID:    insID,
-			Name:      system.InstructionIDToName(insID),
-			Accounts:  tp.parseInstructionAccounts(sysIns.Accounts()),
-			Data:      sysIns.Impl,
-		}, nil
-	case ProgramIDToken:
-		var tokenIns token.Instruction
-		err := tokenIns.UnmarshalWithDecoder(bin.NewBinDecoder(ins.Data))
-		if err != nil {
-			return ParsedInstruction{}, fmt.Errorf("unmarshal system instruction: %w", err)
-		}
-		insID := tokenIns.TypeID.Uint8()
-		return ParsedInstruction{
-			ProgramID: programID,
-			TypeID:    uint32(insID),
-			Name:      token.InstructionIDToName(insID),
-			Accounts:  tp.parseInstructionAccounts(tokenIns.Accounts()),
-			Data:      tokenIns.Impl,
-		}, nil
-	case ProgramIDComputeBudget:
-		var cbIns computebudget.Instruction
-		err := cbIns.UnmarshalWithDecoder(bin.NewBinDecoder(ins.Data))
-		if err != nil {
-			return ParsedInstruction{}, fmt.Errorf("unmarshal system instruction: %w", err)
-		}
-		insID := cbIns.TypeID.Uint8()
-		return ParsedInstruction{
-			ProgramID: programID,
-			TypeID:    uint32(insID),
-			Name:      computebudget.InstructionIDToName(insID),
-			Accounts:  tp.parseInstructionAccounts(cbIns.Accounts()),
-			Data:      cbIns.Impl,
-		}, nil
-	default:
-		// TODO: implement other programs
-		return ParsedInstruction{
-			ProgramID: programID,
-			Name:      "Unknown",
-			Data:      ins.Data.String(), // base58
-		}, nil
-	}
+	return tp.insParserFactory.GetParser(programID)(tx, ins)
 }
 
-func (*TxParser) parseInstructionAccounts(accs []*solana.AccountMeta) []ParsedInstructionAccount {
+func parseInstructionAccounts(accs []*solana.AccountMeta) []ParsedInstructionAccount {
 	if len(accs) == 0 {
 		return nil
 	}
@@ -279,4 +236,167 @@ func (*TxParser) parseInstructionAccounts(accs []*solana.AccountMeta) []ParsedIn
 		return true
 	})
 	return parsedAccs
+}
+
+type instructionsParser func(tx *solana.Transaction, ins solana.CompiledInstruction) (ParsedInstruction, error)
+
+type instructionsParserFactory struct {
+	parsers map[string]instructionsParser
+}
+
+func (f *instructionsParserFactory) GetParser(programID string) instructionsParser {
+	parser, ok := f.parsers[programID]
+	if !ok {
+		return func(tx *solana.Transaction, ins solana.CompiledInstruction) (ParsedInstruction, error) {
+			return ParsedInstruction{
+				ProgramID: programID,
+				Name:      "Unknown",
+				Data:      ins.Data.String(), // base58
+			}, nil
+		}
+	}
+	return parser
+}
+
+func newInstructionsParserFactory() instructionsParserFactory {
+	return instructionsParserFactory{
+		parsers: map[string]instructionsParser{
+			system.ProgramID.String(): func(tx *solana.Transaction, ins solana.CompiledInstruction) (ParsedInstruction, error) {
+				var insData system.Instruction
+				err := insData.UnmarshalWithDecoder(bin.NewBinDecoder(ins.Data))
+				if err != nil {
+					return ParsedInstruction{}, fmt.Errorf("unmarshal system instruction: %w", err)
+				}
+				insID := insData.TypeID.Uint32()
+				return ParsedInstruction{
+					ProgramID: insData.ProgramID().String(),
+					TypeID:    insID,
+					Name:      system.InstructionIDToName(insID),
+					Accounts:  parseInstructionAccounts(insData.Accounts()),
+					Data:      insData.Impl,
+				}, nil
+			},
+			token.ProgramID.String(): func(tx *solana.Transaction, ins solana.CompiledInstruction) (ParsedInstruction, error) {
+				var insData token.Instruction
+				err := insData.UnmarshalWithDecoder(bin.NewBinDecoder(ins.Data))
+				if err != nil {
+					return ParsedInstruction{}, fmt.Errorf("unmarshal token instruction: %w", err)
+				}
+				insID := insData.TypeID.Uint8()
+				return ParsedInstruction{
+					ProgramID: insData.ProgramID().String(),
+					TypeID:    uint32(insID),
+					Name:      token.InstructionIDToName(insID),
+					Accounts:  parseInstructionAccounts(insData.Accounts()),
+					Data:      insData.Impl,
+				}, nil
+			},
+			computebudget.ProgramID.String(): func(tx *solana.Transaction, ins solana.CompiledInstruction) (ParsedInstruction, error) {
+				var insData computebudget.Instruction
+				err := insData.UnmarshalWithDecoder(bin.NewBinDecoder(ins.Data))
+				if err != nil {
+					return ParsedInstruction{}, fmt.Errorf("unmarshal compute budget instruction: %w", err)
+				}
+				insID := insData.TypeID.Uint8()
+				return ParsedInstruction{
+					ProgramID: insData.ProgramID().String(),
+					TypeID:    uint32(insID),
+					Name:      computebudget.InstructionIDToName(insID),
+					Accounts:  parseInstructionAccounts(insData.Accounts()),
+					Data:      insData.Impl,
+				}, nil
+			},
+			associatedtokenaccount.ProgramID.String(): func(tx *solana.Transaction, ins solana.CompiledInstruction) (ParsedInstruction, error) {
+				var insData associatedtokenaccount.Instruction
+				err := insData.UnmarshalWithDecoder(bin.NewBinDecoder(ins.Data))
+				if err != nil {
+					return ParsedInstruction{}, fmt.Errorf("unmarshal associated token account instruction: %w", err)
+				}
+				insID := insData.TypeID.Uint8()
+				bv := new(bin.BaseVariant)
+				bv.Assign(insData.TypeID, nil)
+				_, name, _ := bv.Obtain(associatedtokenaccount.InstructionImplDef)
+				return ParsedInstruction{
+					ProgramID: insData.ProgramID().String(),
+					TypeID:    uint32(insID),
+					Name:      name,
+					Accounts:  parseInstructionAccounts(insData.Accounts()),
+					Data:      insData.Impl,
+				}, nil
+			},
+			memo.ProgramID.String(): func(tx *solana.Transaction, ins solana.CompiledInstruction) (ParsedInstruction, error) {
+				var insData memo.MemoInstruction
+				err := insData.UnmarshalWithDecoder(bin.NewBinDecoder(ins.Data))
+				if err != nil {
+					return ParsedInstruction{}, fmt.Errorf("unmarshal memo instruction: %w", err)
+				}
+				insID := insData.TypeID.Uint8()
+				bv := new(bin.BaseVariant)
+				bv.Assign(insData.TypeID, nil)
+				_, name, _ := bv.Obtain(memo.InstructionImplDef)
+				return ParsedInstruction{
+					ProgramID: insData.ProgramID().String(),
+					TypeID:    uint32(insID),
+					Name:      name,
+					Accounts:  parseInstructionAccounts(insData.Accounts()),
+					Data:      insData.Impl,
+				}, nil
+			},
+			stake.ProgramID.String(): func(tx *solana.Transaction, ins solana.CompiledInstruction) (ParsedInstruction, error) {
+				var insData stake.Instruction
+				err := insData.UnmarshalWithDecoder(bin.NewBinDecoder(ins.Data))
+				if err != nil {
+					return ParsedInstruction{}, fmt.Errorf("unmarshal stake instruction: %w", err)
+				}
+				insID := insData.TypeID.Uint32()
+				bv := new(bin.BaseVariant)
+				bv.Assign(insData.TypeID, nil)
+				_, name, _ := bv.Obtain(stake.InstructionImplDef)
+				return ParsedInstruction{
+					ProgramID: insData.ProgramID().String(),
+					TypeID:    insID,
+					Name:      name,
+					Accounts:  parseInstructionAccounts(insData.Accounts()),
+					Data:      insData.Impl,
+				}, nil
+			},
+			vote.ProgramID.String(): func(tx *solana.Transaction, ins solana.CompiledInstruction) (ParsedInstruction, error) {
+				var insData vote.Instruction
+				err := insData.UnmarshalWithDecoder(bin.NewBinDecoder(ins.Data))
+				if err != nil {
+					return ParsedInstruction{}, fmt.Errorf("unmarshal vote instruction: %w", err)
+				}
+				insID := insData.TypeID.Uint32()
+				bv := new(bin.BaseVariant)
+				bv.Assign(insData.TypeID, nil)
+				_, name, _ := bv.Obtain(vote.InstructionImplDef)
+				return ParsedInstruction{
+					ProgramID: insData.ProgramID().String(),
+					TypeID:    insID,
+					Name:      name,
+					Accounts:  parseInstructionAccounts(insData.Accounts()),
+					Data:      insData.Impl,
+				}, nil
+			},
+			// token registry program id (mainnet beta) // NOTE: see tokenregistry.ProgramID()
+			"CmPVzy88JSB4S223yCvFmBxTLobLya27KgEDeNPnqEub": func(tx *solana.Transaction, ins solana.CompiledInstruction) (ParsedInstruction, error) {
+				var insData tokenregistry.Instruction
+				err := insData.UnmarshalWithDecoder(bin.NewBinDecoder(ins.Data))
+				if err != nil {
+					return ParsedInstruction{}, fmt.Errorf("unmarshal token registry instruction: %w", err)
+				}
+				insID := insData.TypeID.Uint32()
+				bv := new(bin.BaseVariant)
+				bv.Assign(insData.TypeID, nil)
+				_, name, _ := bv.Obtain(tokenregistry.InstructionDefVariant)
+				return ParsedInstruction{
+					ProgramID: insData.ProgramID().String(),
+					TypeID:    insID,
+					Name:      name,
+					Accounts:  parseInstructionAccounts(insData.Accounts()),
+					Data:      insData.Impl,
+				}, nil
+			},
+		},
+	}
 }
