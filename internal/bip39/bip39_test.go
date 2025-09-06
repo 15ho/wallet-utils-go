@@ -66,3 +66,17 @@ func TestMnemonicGenerator(t *testing.T) {
 		})
 	})
 }
+
+func TestCreateSeedFromMnemonic(t *testing.T) {
+	mg, err := NewMnemonicGenerator("english")
+	assert.NoError(t, err)
+
+	words, err := mg.Generate()
+	assert.NoError(t, err)
+	seed := CreateSeedFromMnemonic(words)
+	assert.Len(t, seed, 64)
+	t.Log(seed)
+	seed = CreateSeedFromMnemonic(words, "123456")
+	assert.Len(t, seed, 64)
+	t.Log(seed)
+}
