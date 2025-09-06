@@ -3,11 +3,15 @@ package bip39
 import (
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/hex"
 	"fmt"
 	"math/big"
 	"slices"
 	"strings"
+
+	"golang.org/x/crypto/pbkdf2"
+	"golang.org/x/text/unicode/norm"
 
 	"github.com/15ho/wallet-utils-go/internal/bip39/wordlist"
 )
@@ -106,4 +110,28 @@ func (mg *MnemonicGenerator) toMnemonic(data []byte) (string, error) {
 		words[i] = mg.wordList[bInt.Int64()]
 	}
 	return strings.Join(words, mg.delimiter), nil
+}
+
+// CreateSeedFromMnemonic creates a seed from a mnemonic.
+func CreateSeedFromMnemonic(mnemonic string, passphraseOption ...string) []byte {
+	var passphrase string
+	if len(passphraseOption) > 0 {
+		passphrase = passphraseOption[0]
+	}
+	normalizedMnemonic := normalizeString(mnemonic)
+	normalizedPassphrase := normalizeString(passphrase)
+
+	salt := "mnemonic" + normalizedPassphrase
+
+	return pbkdf2.Key(
+		[]byte(normalizedMnemonic),
+		[]byte(salt),
+		2048,
+		64,
+		sha512.New,
+	)
+}
+
+func normalizeString(s string) string {
+	return norm.NFKD.String(s)
 }
