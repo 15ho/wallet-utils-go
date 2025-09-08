@@ -30,7 +30,7 @@ type MnemonicGenerator struct {
 // NewMnemonicGenerator returns a new MnemonicGenerator for the given language.
 func NewMnemonicGenerator(language string) (*MnemonicGenerator, error) {
 	var wordListStr string
-	mnemonicSep := " "
+	delimiter := " "
 	switch strings.ToLower(language) {
 	case "english":
 		wordListStr = wordlist.English
@@ -46,7 +46,7 @@ func NewMnemonicGenerator(language string) (*MnemonicGenerator, error) {
 		wordListStr = wordlist.Italian
 	case "japanese":
 		wordListStr = wordlist.Japanese
-		mnemonicSep = "\u3000"
+		delimiter = "\u3000"
 	case "korean":
 		wordListStr = wordlist.Korean
 	case "portuguese":
@@ -67,7 +67,7 @@ func NewMnemonicGenerator(language string) (*MnemonicGenerator, error) {
 	}
 	return &MnemonicGenerator{
 		wordList:  wordList,
-		delimiter: mnemonicSep,
+		delimiter: delimiter,
 	}, nil
 }
 
