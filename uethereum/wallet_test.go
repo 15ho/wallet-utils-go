@@ -45,4 +45,10 @@ func TestWalletClient(t *testing.T) {
 		assert.NoError(t, err)
 		t.Logf("acc2 eth balance: %s", balance)
 	})
+
+	t.Run("estimate transfer erc20 token", func(t *testing.T) {
+		gas, err := wc.EstimateGasTransferERC20Token(ctx, USDCTokenAddress, Acc2AccountAddress, big.NewInt(1000000))
+		assert.NoError(t, err)
+		t.Logf("gas: %d", gas)
+	})
 }

@@ -11,3 +11,8 @@ var (
 
 	EthTestnet = os.Getenv("ETHTESTNET")
 )
+
+const (
+	// Ethereum testnet USDC faucet: https://faucet.circle.com/
+	USDCTokenAddress = "0x1c7d4b196cb0c7b01d743fbc6116a902379c7238"
+)
