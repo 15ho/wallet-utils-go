@@ -51,4 +51,24 @@ func TestWalletClient(t *testing.T) {
 		assert.NoError(t, err)
 		t.Logf("gas: %d", gas)
 	})
+
+	t.Run("transfer erc20 token", func(t *testing.T) {
+		gasPrice, err := wc.SuggestGasPrice(ctx)
+		assert.NoError(t, err)
+		txHash, err := wc.TransferERC20Token(ctx, USDCTokenAddress, Acc2AccountAddress, big.NewInt(1), 100000, gasPrice)
+		assert.NoError(t, err)
+		t.Logf("txHash: %s", txHash)
+	})
+
+	t.Run("get erc20 token balance", func(t *testing.T) {
+		balance, err := wc.GetERC20TokenBalance(ctx, USDCTokenAddress)
+		assert.NoError(t, err)
+		t.Logf("acc1 usdc balance: %s", balance)
+	})
+
+	t.Run("get erc20 token balance by address", func(t *testing.T) {
+		balance, err := wc.GetERC20TokenBalanceByAddress(ctx, USDCTokenAddress, Acc2AccountAddress)
+		assert.NoError(t, err)
+		t.Logf("acc2 usdc balance: %s", balance)
+	})
 }
