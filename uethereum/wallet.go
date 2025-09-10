@@ -97,3 +97,19 @@ func (wc *WalletClient) GetETHBalance(ctx context.Context) (balance *big.Int, er
 func (wc *WalletClient) GetETHBalanceByAddress(ctx context.Context, address string) (balance *big.Int, err error) {
 	return wc.cli.BalanceAt(ctx, common.HexToAddress(address), nil)
 }
+
+func (wc *WalletClient) EstimateGasTransferERC20Token(ctx context.Context, tokenContract, to string, amount *big.Int) (gas uint64, err error) {
+	tokenAddr := common.HexToAddress(tokenContract)
+	toAddr := common.HexToAddress(to)
+	data, err := erc20ABI.Pack("transfer", toAddr, amount)
+	if err != nil {
+		err = fmt.Errorf("abi pack: %w", err)
+		return
+	}
+	gas, err = wc.cli.EstimateGas(ctx, ethereum.CallMsg{
+		From: wc.account,
+		To:   &tokenAddr,
+		Data: data,
+	})
+	return
+}
