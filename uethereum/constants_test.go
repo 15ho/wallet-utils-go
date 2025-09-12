@@ -10,6 +10,7 @@ var (
 	Acc2AccountAddress = os.Getenv("ACC2ADDRHEX")
 
 	EthTestnet = os.Getenv("ETHTESTNET")
+	EthMainnet = os.Getenv("ETHMAINNET")
 )
 
 const (
