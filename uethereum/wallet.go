@@ -26,11 +26,7 @@ func CreateWalletAccount() (privateKeyHex, address string, err error) {
 }
 
 func WalletAddressFromPrivateKey(privateKeyHex string) (address string, err error) {
-	privateKeyBytes, err := hexutil.Decode(privateKeyHex)
-	if err != nil {
-		return
-	}
-	pk, err := crypto.ToECDSA(privateKeyBytes)
+	pk, err := crypto.ToECDSA(common.FromHex(privateKeyHex))
 	if err != nil {
 		return
 	}
