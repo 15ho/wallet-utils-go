@@ -1,10 +1,10 @@
-package uethereum
+package utron
 
 import "os"
 
 const (
-	// Ethereum testnet USDC faucet: https://faucet.circle.com/
-	USDCTokenAddress = "0x1c7d4b196cb0c7b01d743fbc6116a902379c7238"
+	// tron testnet USDT faucet: https://nileex.io/join/getJoinPage
+	USDTTokenAddress = "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf"
 )
 
 var (
@@ -14,8 +14,8 @@ var (
 	Acc2PrivateKeyHex  = os.Getenv("ACC2PKHEX")
 	Acc2AccountAddress string
 
-	EthTestnet = os.Getenv("ETHTESTNET")
-	EthMainnet = os.Getenv("ETHMAINNET")
+	TronTestnet = os.Getenv("TRONTESTNET")
+	TronMainnet = os.Getenv("TRONMAINNET")
 )
 
 func init() {

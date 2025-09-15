@@ -15,6 +15,10 @@ func TestCreateWalletAccount(t *testing.T) {
 	assert.NotEmpty(t, pk58)
 	assert.NotEmpty(t, addr)
 	t.Logf("private key base58: %s, account address: %s", pk58, addr)
+
+	addr2, err := WalletAddressFromPrivateKey(pk58)
+	assert.NoError(t, err)
+	assert.Equal(t, addr, addr2)
 }
 
 func TestWalletClient(t *testing.T) {

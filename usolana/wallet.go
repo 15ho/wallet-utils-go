@@ -25,6 +25,14 @@ func CreateWalletAccount() (privateKeyBase58, address string, err error) {
 	return
 }
 
+func WalletAddressFromPrivateKey(privateKeyBase58 string) (address string, err error) {
+	privateKey, err := solana.PrivateKeyFromBase58(privateKeyBase58)
+	if err != nil {
+		return
+	}
+	return base58.Encode(privateKey.PublicKey().Bytes()), nil
+}
+
 type WalletClient struct {
 	cli *rpc.Client
 
