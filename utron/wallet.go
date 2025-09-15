@@ -3,6 +3,7 @@ package utron
 import (
 	"context"
 	"crypto/ecdsa"
+	"crypto/sha256"
 	"crypto/tls"
 	"encoding/hex"
 	"fmt"
@@ -88,7 +89,23 @@ func NewWalletClientWithXToken(endpoint, token, privateKeyHex string) (wc *Walle
 		grpc.WithPerRPCCredentials(auth{}))
 }
 
-func (wc *WalletClient) EstimateGasTransferTRX(ctx context.Context, to string, amount int64) (gas int64, err error) {
+type Gas struct {
+	Total int64 // = Bandwidth * BandwidthUnitPrice + Energy + EnergyUnitPrice
+	// or, = CreateAccountFee + CreateAccountBandwidthFee
+
+	BandwidthUsed      int64
+	BandwidthUnitPrice int64
+
+	// --- contract deploy or call ---
+	EnergyUsed      int64
+	EnergyUnitPrice int64
+
+	// --- only transfer trx to inactivated account ---
+	CreateAccountFee          int64
+	CreateAccountBandwidthFee int64
+}
+
+func (wc *WalletClient) EstimateGasTransferTRX(ctx context.Context, to string, amount int64) (gas Gas, err error) {
 	params, err := wc.cli.Client.GetChainParameters(ctx, &api.EmptyMessage{})
 	if err != nil {
 		err = fmt.Errorf("get chain parameters error: %w", err)
@@ -120,7 +137,11 @@ func (wc *WalletClient) EstimateGasTransferTRX(ctx context.Context, to string, a
 			return true
 		})
 
-		gas = createAccountFee + createAccountBandwidthFee
+		gas = Gas{
+			Total:                     createAccountFee + createAccountBandwidthFee,
+			CreateAccountFee:          createAccountFee,
+			CreateAccountBandwidthFee: createAccountBandwidthFee,
+		}
 		return
 	}
 
@@ -156,7 +177,12 @@ func (wc *WalletClient) EstimateGasTransferTRX(ctx context.Context, to string, a
 	}
 	// TRX burned to pay for Bandwidth = Total Bandwidth consumed by the transaction * Bandwidth unit price
 	// https://developers.tron.network/docs/faq#5-how-to-calculate-the-bandwidth-and-energy-consumed-when-callingdeploying-a-contract
-	gas = int64(len(txBytes)+64) * bandwidthUnitPrice
+	bandwidthUsed := int64(len(txBytes) + 64)
+	gas = Gas{
+		Total:              bandwidthUsed * bandwidthUnitPrice,
+		BandwidthUsed:      bandwidthUsed,
+		BandwidthUnitPrice: bandwidthUnitPrice,
+	}
 	return
 }
 
@@ -200,6 +226,137 @@ func (wc *WalletClient) GetTRXBalanceByAddress(ctx context.Context, address stri
 		return
 	}
 	balance = acc.Balance
+	return
+}
+
+func (wc *WalletClient) EstimateGasTransferTRC20Token(ctx context.Context, tokenAddress, to string, amount *big.Int, feeLimit int64) (gas Gas, err error) {
+	params, err := wc.cli.Client.GetChainParameters(ctx, &api.EmptyMessage{})
+	if err != nil {
+		err = fmt.Errorf("get chain parameters error: %w", err)
+		return
+	}
+
+	var (
+		energyUnitPrice    int64 // getEnergyFee
+		bandwidthUnitPrice int64 // getTransactionFee
+	)
+	// https://developers.tron.network/reference/wallet-getchainparameters
+	slices.Values(params.GetChainParameter())(func(param *core.ChainParameters_ChainParameter) bool {
+		if param != nil {
+			switch param.Key {
+			case "getEnergyFee":
+				energyUnitPrice = param.Value
+			case "getTransactionFee":
+				bandwidthUnitPrice = param.Value
+			}
+			return energyUnitPrice == 0 || bandwidthUnitPrice == 0
+		}
+		return true
+	})
+
+	jsonStr := fmt.Sprintf(`[{"address":"%s"},{"uint256":"%s"}]`, to, amount)
+	res, err := wc.cli.EstimateEnergy(wc.account, tokenAddress, "transfer(address,uint256)", jsonStr, 0, "", 0)
+	if err != nil {
+		return
+	}
+	energyFee := res.EnergyRequired * energyUnitPrice
+
+	txExt, err := wc.cli.TRC20Send(wc.account, to, tokenAddress, amount, feeLimit)
+	if err != nil {
+		err = fmt.Errorf("create trc20 call tx error: %w", err)
+		return
+	}
+	signature, err := crypto.Sign(txExt.Txid, wc.privateKey)
+	if err != nil {
+		err = fmt.Errorf("sign error: %w", err)
+		return
+	}
+	txExt.Transaction.Signature = append(txExt.Transaction.Signature, signature)
+	txBytes, err := proto.Marshal(txExt.Transaction)
+	if err != nil {
+		err = fmt.Errorf("marshal tx error: %w", err)
+		return
+	}
+	// TRX burned to pay for Bandwidth = Total Bandwidth consumed by the transaction * Bandwidth unit price
+	// https://developers.tron.network/docs/faq#5-how-to-calculate-the-bandwidth-and-energy-consumed-when-callingdeploying-a-contract
+	bandwidthUsed := int64(len(txBytes) + 64)
+	bandwidthFee := bandwidthUsed * bandwidthUnitPrice
+
+	gas = Gas{
+		Total:              energyFee + bandwidthFee,
+		BandwidthUsed:      bandwidthUsed,
+		BandwidthUnitPrice: bandwidthUnitPrice,
+		EnergyUsed:         txExt.EnergyUsed,
+		EnergyUnitPrice:    energyUnitPrice,
+	}
+	return
+}
+
+func (wc *WalletClient) EstimateGasTransferTRC20TokenV2(ctx context.Context, tokenAddress, to string, amount *big.Int, feeLimit int64) (gas Gas, err error) {
+	params, err := wc.cli.Client.GetChainParameters(ctx, &api.EmptyMessage{})
+	if err != nil {
+		err = fmt.Errorf("get chain parameters error: %w", err)
+		return
+	}
+
+	var (
+		energyUnitPrice    int64 // getEnergyFee
+		bandwidthUnitPrice int64 // getTransactionFee
+	)
+	// https://developers.tron.network/reference/wallet-getchainparameters
+	slices.Values(params.GetChainParameter())(func(param *core.ChainParameters_ChainParameter) bool {
+		if param != nil {
+			switch param.Key {
+			case "getEnergyFee":
+				energyUnitPrice = param.Value
+			case "getTransactionFee":
+				bandwidthUnitPrice = param.Value
+			}
+			return energyUnitPrice == 0 || bandwidthUnitPrice == 0
+		}
+		return true
+	})
+
+	jsonStr := fmt.Sprintf(`[{"address":"%s"},{"uint256":"%s"}]`, to, amount)
+	txExt, err := wc.cli.TriggerConstantContract(wc.account, tokenAddress, "transfer(address,uint256)", jsonStr)
+	if err != nil {
+		err = fmt.Errorf("TriggerConstantContract: %w", err)
+		return
+	}
+	energyFee := txExt.EnergyUsed * energyUnitPrice
+
+	tx := txExt.Transaction
+	tx.RawData.FeeLimit = feeLimit
+	tx.Ret = nil
+	txRawDataBytes, err := proto.Marshal(tx.RawData)
+	if err != nil {
+		err = fmt.Errorf("marshal transaction raw data: %w", err)
+		return
+	}
+	hash := sha256.Sum256(txRawDataBytes)
+	signature, err := crypto.Sign(hash[:], wc.privateKey)
+	if err != nil {
+		err = fmt.Errorf("sign error: %w", err)
+		return
+	}
+	tx.Signature = append(tx.Signature, signature)
+	txBytes, err := proto.Marshal(tx)
+	if err != nil {
+		err = fmt.Errorf("marshal tx error: %w", err)
+		return
+	}
+	// TRX burned to pay for Bandwidth = Total Bandwidth consumed by the transaction * Bandwidth unit price
+	// https://developers.tron.network/docs/faq#5-how-to-calculate-the-bandwidth-and-energy-consumed-when-callingdeploying-a-contract
+	bandwidthUsed := int64(len(txBytes) + 64)
+	bandwidthFee := bandwidthUsed * bandwidthUnitPrice
+
+	gas = Gas{
+		Total:              energyFee + bandwidthFee,
+		BandwidthUsed:      bandwidthUsed,
+		BandwidthUnitPrice: bandwidthUnitPrice,
+		EnergyUsed:         txExt.EnergyUsed,
+		EnergyUnitPrice:    energyUnitPrice,
+	}
 	return
 }
 

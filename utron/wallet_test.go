@@ -55,6 +55,34 @@ func TestWalletClient(t *testing.T) {
 		t.Logf("acc2 trx balance: %d", balance)
 	})
 
+	t.Run("estimate gas transfer trc20 token", func(t *testing.T) {
+		gas, err := wc.EstimateGasTransferTRC20Token(ctx, USDTTokenAddress, Acc1AccountAddress, big.NewInt(1), 100*SunPerTRX)
+		assert.NoError(t, err)
+		t.Logf("gas: %d", gas)
+	})
+
+	t.Run("estimate gas transfer trc20 token to inactivated account", func(t *testing.T) {
+		_, address, err := CreateWalletAccount()
+		assert.NoError(t, err)
+		gas, err := wc.EstimateGasTransferTRC20Token(ctx, USDTTokenAddress, address, big.NewInt(1), 100*SunPerTRX)
+		assert.NoError(t, err)
+		t.Logf("gas: %d", gas)
+	})
+
+	t.Run("estimate gas transfer trc20 token v2", func(t *testing.T) {
+		gas, err := wc.EstimateGasTransferTRC20TokenV2(ctx, USDTTokenAddress, Acc2AccountAddress, big.NewInt(1), 100*SunPerTRX)
+		assert.NoError(t, err)
+		t.Logf("gas: %d", gas)
+	})
+
+	t.Run("estimate gas transfer trc20 token to inactivated account v2", func(t *testing.T) {
+		_, address, err := CreateWalletAccount()
+		assert.NoError(t, err)
+		gas, err := wc.EstimateGasTransferTRC20TokenV2(ctx, USDTTokenAddress, address, big.NewInt(1), 100*SunPerTRX)
+		assert.NoError(t, err)
+		t.Logf("gas: %d", gas)
+	})
+
 	t.Run("transfer trc20 token", func(t *testing.T) {
 		txHash, err := wc.TransferTRC20Token(ctx, USDTTokenAddress, Acc2AccountAddress, big.NewInt(1), 100*SunPerTRX)
 		assert.NoError(t, err)
