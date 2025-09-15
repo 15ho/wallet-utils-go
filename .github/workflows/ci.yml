@@ -17,6 +17,12 @@ jobs:
       ACC1ADDR: ${{ secrets.ACC1ADDR }}
       ACC2PK58: ${{ secrets.ACC2PK58 }}
       ACC2ADDR: ${{ secrets.ACC1ADDR }}
+      ACC1PKHEX: ${{ secrets.ACC1PKHEX }}
+      ACC1ADDRHEX: ${{ secrets.ACC1ADDRHEX }}
+      ACC2PKHEX: ${{ secrets.ACC2PKHEX }}
+      ACC2ADDRHEX: ${{ secrets.ACC2ADDRHEX }}
+      ETHTESTNET: ${{ secrets.ETHTESTNET }}
+      ETHMAINNET: ${{ secrets.ETHMAINNET }}
 
     steps:
       - uses: actions/checkout@v4
