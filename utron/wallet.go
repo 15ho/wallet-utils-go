@@ -7,14 +7,19 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math/big"
+	"slices"
+	"strings"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 	tronaddr "github.com/fbsobreira/gotron-sdk/pkg/address"
 	"github.com/fbsobreira/gotron-sdk/pkg/client"
+	"github.com/fbsobreira/gotron-sdk/pkg/proto/api"
+	"github.com/fbsobreira/gotron-sdk/pkg/proto/core"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/protobuf/proto"
 )
 
 func CreateWalletAccount() (privateKeyHex, address string, err error) {
@@ -81,6 +86,78 @@ func NewWalletClientWithBasicAuth(endpoint, token, privateKeyHex string) (wc *Wa
 func NewWalletClientWithXToken(endpoint, token, privateKeyHex string) (wc *WalletClient, cleanup func(), err error) {
 	return newWalletClient(endpoint, privateKeyHex, grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{})),
 		grpc.WithPerRPCCredentials(auth{}))
+}
+
+func (wc *WalletClient) EstimateGasTransferTRX(ctx context.Context, to string, amount int64) (gas int64, err error) {
+	params, err := wc.cli.Client.GetChainParameters(ctx, &api.EmptyMessage{})
+	if err != nil {
+		err = fmt.Errorf("get chain parameters error: %w", err)
+		return
+	}
+
+	_, checkErr := wc.cli.GetAccount(to)
+	if checkErr != nil {
+		if !strings.Contains("account not found", checkErr.Error()) {
+			err = checkErr
+			return
+		}
+		// --- inactivated account ---
+		var (
+			createAccountFee          int64 // getCreateNewAccountFeeInSystemContract
+			createAccountBandwidthFee int64 // getCreateAccountFee
+		)
+		// https://developers.tron.network/reference/wallet-getchainparameters
+		slices.Values(params.GetChainParameter())(func(param *core.ChainParameters_ChainParameter) bool {
+			if param != nil {
+				switch param.Key {
+				case "getCreateNewAccountFeeInSystemContract":
+					createAccountFee = param.Value
+				case "getCreateAccountFee":
+					createAccountBandwidthFee = param.Value
+				}
+				return createAccountFee == 0 || createAccountBandwidthFee == 0
+			}
+			return true
+		})
+
+		gas = createAccountFee + createAccountBandwidthFee
+		return
+	}
+
+	// --- activated account ---
+	var bandwidthUnitPrice int64 // getTransactionFee
+	// https://developers.tron.network/reference/wallet-getchainparameters
+	slices.Values(params.GetChainParameter())(func(param *core.ChainParameters_ChainParameter) bool {
+		if param != nil && param.Key == "getTransactionFee" {
+			bandwidthUnitPrice = param.Value
+			return false
+		}
+		return true
+	})
+
+	// bandwidth fee
+	// https://developers.tron.network/docs/tron-protocol-transaction#bandwidth-fee
+	txExt, err := wc.cli.Transfer(wc.account, to, amount)
+	if err != nil {
+		err = fmt.Errorf("create transfer tx error: %w", err)
+		return
+	}
+	signature, err := crypto.Sign(txExt.Txid, wc.privateKey)
+	if err != nil {
+		err = fmt.Errorf("sign error: %w", err)
+		return
+	}
+	tx := txExt.Transaction
+	tx.Signature = append(tx.Signature, signature)
+	txBytes, err := proto.Marshal(tx)
+	if err != nil {
+		err = fmt.Errorf("marshal tx error: %w", err)
+		return
+	}
+	// TRX burned to pay for Bandwidth = Total Bandwidth consumed by the transaction * Bandwidth unit price
+	// https://developers.tron.network/docs/faq#5-how-to-calculate-the-bandwidth-and-energy-consumed-when-callingdeploying-a-contract
+	gas = int64(len(txBytes)+64) * bandwidthUnitPrice
+	return
 }
 
 func (wc *WalletClient) TransferTRX(ctx context.Context, to string, amount int64) (txHash string, err error) {
