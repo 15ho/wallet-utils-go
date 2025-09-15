@@ -11,6 +11,10 @@ func TestCreateWalletAccount(t *testing.T) {
 	privateKeyHex, address, err := CreateWalletAccount()
 	assert.NoError(t, err)
 	t.Logf("privateKeyHex: %s, address: %s", privateKeyHex, address)
+
+	address2, err := WalletAddressFromPrivateKey(privateKeyHex)
+	assert.NoError(t, err)
+	assert.Equal(t, address, address2)
 }
 
 func TestWalletClient(t *testing.T) {
