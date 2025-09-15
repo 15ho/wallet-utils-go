@@ -23,6 +23,20 @@ func TestWalletClient(t *testing.T) {
 	defer cleanup()
 	ctx := t.Context()
 
+	t.Run("estimate gas transfer trx", func(t *testing.T) {
+		gas, err := wc.EstimateGasTransferTRX(ctx, Acc2AccountAddress, SunPerTRX/1000)
+		assert.NoError(t, err)
+		t.Logf("gas: %d", gas)
+	})
+
+	t.Run("estimate gas transfer trx to inactivated account", func(t *testing.T) {
+		_, address, err := CreateWalletAccount()
+		assert.NoError(t, err)
+		gas, err := wc.EstimateGasTransferTRX(ctx, address, SunPerTRX/1000)
+		assert.NoError(t, err)
+		t.Logf("gas: %d", gas)
+	})
+
 	t.Run("transfer trx", func(t *testing.T) {
 		txHash, err := wc.TransferTRX(ctx, Acc2AccountAddress, SunPerTRX/1000)
 		assert.NoError(t, err)
