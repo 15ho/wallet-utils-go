@@ -92,6 +92,7 @@ func NewWalletClientWithXToken(endpoint, token, privateKeyHex string) (wc *Walle
 type Gas struct {
 	Total int64 // = Bandwidth * BandwidthUnitPrice + Energy + EnergyUnitPrice
 	// or, = CreateAccountFee + CreateAccountBandwidthFee
+	// or, = CreateAccountFee + (Bandwidth * BandwidthUnitPrice)
 
 	BandwidthUsed      int64
 	BandwidthUnitPrice int64
@@ -122,6 +123,7 @@ func (wc *WalletClient) EstimateGasTransferTRX(ctx context.Context, to string, a
 		var (
 			createAccountFee          int64 // getCreateNewAccountFeeInSystemContract
 			createAccountBandwidthFee int64 // getCreateAccountFee
+			bandwidthUnitPrice        int64 // getTransactionFee
 		)
 		// https://developers.tron.network/reference/wallet-getchainparameters
 		slices.Values(params.GetChainParameter())(func(param *core.ChainParameters_ChainParameter) bool {
@@ -131,16 +133,58 @@ func (wc *WalletClient) EstimateGasTransferTRX(ctx context.Context, to string, a
 					createAccountFee = param.Value
 				case "getCreateAccountFee":
 					createAccountBandwidthFee = param.Value
+				case "getTransactionFee":
+					bandwidthUnitPrice = param.Value
 				}
-				return createAccountFee == 0 || createAccountBandwidthFee == 0
+				return createAccountFee == 0 ||
+					createAccountBandwidthFee == 0 ||
+					bandwidthUnitPrice == 0
 			}
 			return true
 		})
 
+		txExt, terr := wc.cli.Transfer(wc.account, to, amount)
+		if terr != nil {
+			err = fmt.Errorf("create transfer tx error: %w", terr)
+			return
+		}
+		signature, terr := crypto.Sign(txExt.Txid, wc.privateKey)
+		if terr != nil {
+			err = fmt.Errorf("sign error: %w", terr)
+			return
+		}
+		tx := txExt.Transaction
+		tx.Signature = append(tx.Signature, signature)
+		txBytes, terr := proto.Marshal(tx)
+		if terr != nil {
+			err = fmt.Errorf("marshal tx error: %w", terr)
+			return
+		}
+		bandwidthUsed := int64(len(txBytes) + 64)
+
+		accRes, terr := wc.cli.GetAccountResource(wc.account)
+		if terr != nil {
+			err = fmt.Errorf("getAccountResource failed: %w", terr)
+			return
+		}
+
+		// When creating an account, if the creator’s account does not have enough bandwidth obtained through staking,
+		// then the value corresponding to this parameter needs to be burned to pay for the bandwidth
+		stakeBandwidth := accRes.NetLimit - accRes.NetUsed
+		if stakeBandwidth < bandwidthUsed {
+			gas = Gas{
+				Total:                     createAccountFee + createAccountBandwidthFee,
+				CreateAccountFee:          createAccountFee,
+				CreateAccountBandwidthFee: createAccountBandwidthFee,
+			}
+			return
+		}
+
 		gas = Gas{
-			Total:                     createAccountFee + createAccountBandwidthFee,
-			CreateAccountFee:          createAccountFee,
-			CreateAccountBandwidthFee: createAccountBandwidthFee,
+			Total:              createAccountFee + bandwidthUsed*bandwidthUnitPrice,
+			CreateAccountFee:   createAccountFee,
+			BandwidthUsed:      bandwidthUsed,
+			BandwidthUnitPrice: bandwidthUnitPrice,
 		}
 		return
 	}
