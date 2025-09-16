@@ -86,7 +86,7 @@ func NewWalletClientWithBasicAuth(endpoint, token, privateKeyHex string) (wc *Wa
 
 func NewWalletClientWithXToken(endpoint, token, privateKeyHex string) (wc *WalletClient, cleanup func(), err error) {
 	return newWalletClient(endpoint, privateKeyHex, grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{})),
-		grpc.WithPerRPCCredentials(auth{}))
+		grpc.WithPerRPCCredentials(auth{token}))
 }
 
 type Gas struct {
