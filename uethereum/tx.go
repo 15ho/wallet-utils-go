@@ -24,6 +24,7 @@ type ParsedTx struct {
 	Block          *big.Int     // block height
 	Timestamp      int64        // block timestamp // milliseconds
 	TxHash         string       // transaction hash
+	Status         string       // transaction status // success or fail
 	From           string       // from address
 	To             string       // to address // wallet or contract address
 	Value          *big.Int     // transaction value
@@ -89,6 +90,11 @@ func (tp *TxParser) parseTx(blockHeader *types.Header, tx *types.Transaction, re
 		return
 	}
 
+	txStatus := "fail"
+	if receipt.Status == types.ReceiptStatusSuccessful {
+		txStatus = "success"
+	}
+
 	from, err := getTxFrom(tx)
 	if err != nil {
 		err = fmt.Errorf("getTxSender error: %w", err)
@@ -113,6 +119,7 @@ func (tp *TxParser) parseTx(blockHeader *types.Header, tx *types.Transaction, re
 		Block:          blockHeader.Number,
 		Timestamp:      int64(blockHeader.Time),
 		TxHash:         tx.Hash().Hex(),
+		Status:         txStatus,
 		From:           from.Hex(),
 		To:             tx.To().Hex(),
 		Value:          tx.Value(),
