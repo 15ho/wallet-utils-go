@@ -22,6 +22,10 @@ func init() {
 	erc20ABI = parsedABI
 }
 
+func GetERC20ABI() abi.ABI {
+	return erc20ABI
+}
+
 const erc20ABIJson = `[
   {
     "constant": true,
