@@ -90,13 +90,13 @@ func TestWalletClient(t *testing.T) {
 	})
 
 	t.Run("get trc20 token balance", func(t *testing.T) {
-		balance, err := wc.GetERC20TokenBalance(ctx, USDTTokenAddress)
+		balance, err := wc.GetTRC20TokenBalance(ctx, USDTTokenAddress)
 		assert.NoError(t, err)
 		t.Logf("acc1 trc20 token balance: %d", balance)
 	})
 
 	t.Run("get trc20 token balance by address", func(t *testing.T) {
-		balance, err := wc.GetERC20TokenBalanceByAddress(ctx, USDTTokenAddress, Acc2AccountAddress)
+		balance, err := wc.GetTRC20TokenBalanceByAddress(ctx, USDTTokenAddress, Acc2AccountAddress)
 		assert.NoError(t, err)
 		t.Logf("acc2 trc20 token balance: %d", balance)
 	})

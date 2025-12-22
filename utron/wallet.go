@@ -429,10 +429,10 @@ func (wc *WalletClient) TransferTRC20Token(ctx context.Context, tokenAddress, to
 	return
 }
 
-func (wc *WalletClient) GetERC20TokenBalance(ctx context.Context, tokenAddress string) (balance *big.Int, err error) {
+func (wc *WalletClient) GetTRC20TokenBalance(ctx context.Context, tokenAddress string) (balance *big.Int, err error) {
 	return wc.cli.TRC20ContractBalance(wc.account, tokenAddress)
 }
 
-func (wc *WalletClient) GetERC20TokenBalanceByAddress(ctx context.Context, tokenAddress, address string) (balance *big.Int, err error) {
+func (wc *WalletClient) GetTRC20TokenBalanceByAddress(ctx context.Context, tokenAddress, address string) (balance *big.Int, err error) {
 	return wc.cli.TRC20ContractBalance(address, tokenAddress)
 }
